@@ -121,13 +121,14 @@ class Sphere(Thing):
         eo = self.center - ray.start
         v = eo * ray.dir
         dist = 0
-        if v > 0:
-            disc = self.radius2 - eo * eo - v ** 2
+        if v >= 0:
+            #disc = self.radius2 - (Vector.dot(eo, eo) - v * v)
+            disc = self.radius2 - (eo * eo - v ** 2)
             if disc >= 0:
                 dist = v - sqrt(disc)
 
-            if dist != 0:
-                return Intersection(self, ray, dist)
+        if dist != 0:
+            return Intersection(self, ray, dist)
         
 
 class Plane(Thing):
@@ -212,7 +213,7 @@ class RayTracer(object):
 
         return reduce(addLight, scene.lights, Color.defaultColor)
 
-    def render(self, scene, ctx, screenWidth, screenHeight):
+    def render(self, scene, ctx, screenWidth, screenHeight, progressCallback=None):
         def recenterX(x): return  (x - (screenWidth  / 2.0)) / 2.0 / screenWidth
         def recenterY(y): return -(y - (screenHeight / 2.0)) / 2.0 / screenWidth
         def getPoint(x, y, camera):
@@ -254,5 +255,5 @@ def go(fn, w, h):
     img.save(fn)
 
 if __name__ == '__main__':
-    go('render.png', 160, 100)
+    go('render.png', 640, 480)
 
