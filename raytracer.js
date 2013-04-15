@@ -290,6 +290,6 @@ function exec(w, h) {
     return rayTracer.render(defaultScene(), ctx, canv.width, canv.height);
 }
 function append() {
-    exec(7680, 4320);
+    exec(3840, 2160);
 }
 exec(320, 200);

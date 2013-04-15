@@ -219,12 +219,19 @@ class RayTracer(object):
         def getPoint(x, y, camera):
             return (camera.forward + recenterX(x) * camera.right + recenterY(y) * camera.up).norm()
 
+        y = 0
+        percStep = abs(screenHeight) / 50
+        percStep = 1 if percStep < 1 else percStep
         for y in xrange(screenHeight):
+            if progressCallback and y % percStep == 0:
+                progressCallback(y)
             for x in xrange(screenWidth):
                 color = self.traceRay(Ray(start=scene.camera.pos, dir=getPoint(x, y, scene.camera)), scene, 0)
                 ctx.putpixel((x, y), color.toDrawingColor())
                 #ctx.addPixel(color.toDrawingColor())
 
+        if progressCallback:
+            progressCallback(y)
 
 class Scene(object):
     def __init__(self, things=[], lights=[], camera=None):
@@ -249,11 +256,16 @@ defScene = Scene(
 
 
 def go(fn, w, h):
+    import sys
+    from progress_tool import Progress
+    p = Progress(h, statusLineStream=sys.stdout)
     img = Image.new('RGB', (w, h))
     rayTracer = RayTracer()
-    rayTracer.render(defScene, img, w, h)
+    rayTracer.render(defScene, img, w, h, progressCallback=p.next)
     img.save(fn)
 
 if __name__ == '__main__':
-    go('render.png', 640, 480)
+    w, h = 1920*2, 1080*2
+    fn = 'render_{0}x{1}.png'.format(w, h)
+    go(fn, w, h)
 

@@ -16,7 +16,8 @@ def measureTime(func, out=sys.stdout):
 
 class Progress(object):
 
-    def __init__(self, a, b=None, run=True):
+    def __init__(self, a, b=None, run=True, statusLineStream=None, statusLineClear=False, 
+                 fmt=u'%(perc)6.2f%%\t прошло %(time_str)s из %(total_str)s; осталось %(remaining_str)s'):
         if b is None: a, b = 0, a - 1
         if b < a:     a, b = b, a
 
@@ -26,6 +27,10 @@ class Progress(object):
         self.isRun = run
         self.tmStart = datetime.datetime.now()
         self.tmPauseBegin = None
+        self._statusLineSize = 0
+        self.statusLineStream = statusLineStream
+        self.statusLineClear = statusLineClear
+        self.logFmt = fmt
 
     def pause(self):
         if self.isRun:
@@ -51,7 +56,10 @@ class Progress(object):
         else:
             self.value = value
 
-        return self.fmt()
+        if self.statusLineStream:
+            return self.refreshStatusLine()
+        else:
+            return self.fmt()
 
     def getState(self):
         size = self.b - self.a
@@ -70,15 +78,28 @@ class Progress(object):
         d.update(self.__dict__)
         return d
 
-    def fmt(self, fmt=u'%(perc)6.2f%%\t прошло %(time_str)s из %(total_str)s; осталось %(remaining_str)s'):
-        return fmt % self.getState()
+    def fmt(self, fmt=None):
+        return (fmt or self.logFmt) % self.getState()
+
+    def refreshStatusLine(self):
+        if self._statusLineSize > 0:
+            self.statusLineStream.write('\r' if self.statusLineClear else '\n')
+
+        s = self.fmt()
+        self.statusLineStream.write(s)
+        if self.statusLineClear:
+            self.statusLineStream.write(' ' * (self._statusLineSize - len(s)))
+        self._statusLineSize = len(s)
+        return s
+
 
 def test():
+    import sys
     v = 100000000
-    pb = Progress(v)
+    pb = Progress(v, statusLineStream=sys.stdout, statusLineClear=True)
     for i in xrange(v):
         if i % 5000000 == 0:
-            print pb.next(i)
+            pb.next(i)
 
     print pb.next(i)
     
