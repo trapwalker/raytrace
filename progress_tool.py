@@ -63,7 +63,7 @@ class Progress(object):
 
     def getState(self):
         size = self.b - self.a
-        k = (float(self.value) / size) if size else 1
+        k = (float(self.value - self.a) / size) if size else 1
         perc = k * 100
         time = datetime.datetime.now() - self.tmStart
         remaining = time.total_seconds() * (1 - k) / k if k else 0        
@@ -95,11 +95,13 @@ class Progress(object):
 
 def test():
     import sys
-    v = 100000000
-    pb = Progress(v, statusLineStream=sys.stdout, statusLineClear=True)
-    for i in xrange(v):
-        if i % 5000000 == 0:
-            pb.next(i)
+    b = 100
+    a = 0 #b / 2
+    pb = Progress(a, b, statusLineStream=sys.stdout)
+    for i in xrange(a, b):
+        pb.next(i)
+        for j in xrange(1000000):
+            pass
 
     print pb.next(i)
     

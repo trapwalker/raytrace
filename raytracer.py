@@ -7,6 +7,11 @@ from abc import abstractmethod
 from PIL import Image
 
 INF = float('inf')
+BASE_MONITORING_RATE = 320
+BASE_BACKUP_RATE = 64000
+
+def progressiveRange(n):
+    pass
 
 
 class Vector(tuple):
@@ -213,18 +218,22 @@ class RayTracer(object):
 
         return reduce(addLight, scene.lights, Color.defaultColor)
 
-    def render(self, scene, ctx, screenWidth, screenHeight, progressCallback=None):
+    def render(self, scene, ctx, screenWidth, screenHeight, progressCallback=None, state=0, backupRate=100, backupCallback=None):
         def recenterX(x): return  (x - (screenWidth  / 2.0)) / 2.0 / screenWidth
         def recenterY(y): return -(y - (screenHeight / 2.0)) / 2.0 / screenWidth
         def getPoint(x, y, camera):
             return (camera.forward + recenterX(x) * camera.right + recenterY(y) * camera.up).norm()
 
         y = 0
-        percStep = abs(screenHeight) / 50
+        percStep = BASE_MONITORING_RATE / screenWidth or 1
         percStep = 1 if percStep < 1 else percStep
-        for y in xrange(screenHeight):
+        for y in xrange(state, screenHeight):
             if progressCallback and y % percStep == 0:
                 progressCallback(y)
+                
+            if backupCallback and y % backupRate == 0:
+                backupCallback(screenWidth, screenHeight, y)
+                
             for x in xrange(screenWidth):
                 color = self.traceRay(Ray(start=scene.camera.pos, dir=getPoint(x, y, scene.camera)), scene, 0)
                 ctx.putpixel((x, y), color.toDrawingColor())
@@ -254,18 +263,54 @@ defScene = Scene(
     camera=Camera(Vector( 3.0, 2.0,  4.0), Vector(-1.0, 0.5, 0.0))    
 )
 
+def stateFileName(fn):
+    return u'{}.state'.format(fn)
 
 def go(fn, w, h):
+    import os
     import sys
+    import pickle
     from progress_tool import Progress
-    p = Progress(h, statusLineStream=sys.stdout)
-    img = Image.new('RGB', (w, h))
+    
+    def backup(w, h, y):
+        print '# Save',
+        img.save(fn)
+        if y < h - 1:
+            state = dict(w=w, h=h, y=y)
+            print 'Backup render state: {!r}'.format(state),
+            with open(stateFileName(fn), 'wb') as f:
+                pickle.dump(state, f)
+        else:
+            try:
+                print 'Try to remove state file...',
+                os.remove(stateFileName(fn))
+                print 'ok.'
+            except WindowsError:
+                print 'failed.'
+
+    if os.path.isfile(fn) and os.path.isfile(stateFileName(fn)):
+        img = Image.open(fn)
+        with open(stateFileName(fn), 'rb') as f:
+            state = pickle.load(f)
+            print '# Resume render to state: {!r}'.format(state)
+            w, h, y = state['w'], state['h'], state['y']
+    else:
+        img = Image.new('RGB', (w, h))
+        y = 0
+
+    backupRate = BASE_BACKUP_RATE / w or 1
+
+    p = Progress(y, h, statusLineStream=sys.stdout)
+
     rayTracer = RayTracer()
-    rayTracer.render(defScene, img, w, h, progressCallback=p.next)
-    img.save(fn)
+    rayTracer.render(defScene, img, w, h, progressCallback=p.next, state=y, backupRate=backupRate, backupCallback=backup)
+    backup(w, h, h)
 
 if __name__ == '__main__':
-    w, h = 1920*2, 1080*2
+    w, h = 1920*3, 1080*3
+    #w, h = 1024, 768
     fn = 'render_{0}x{1}.png'.format(w, h)
     go(fn, w, h)
 
+    #for i in progressiveRange(64):
+    #    print i
