@@ -78,10 +78,8 @@ class Color(tuple):
     __rmul__ = __mul__
 
 Color.white = Color(1.0, 1.0, 1.0)
-Color.grey  = Color(0.5, 0.5, 0.5);
-Color.black = Color(0.0, 0.0, 0.0);
-Color.background = Color.black;
-Color.defaultColor = Color.black;
+Color.grey  = Color(0.5, 0.5, 0.5)
+Color.black = Color(0.0, 0.0, 0.0)
 
 
 class Camera(object):
@@ -97,6 +95,7 @@ Ray          = namedtuple('Ray',          'start dir')
 Intersection = namedtuple('Intersection', 'thing ray dist')
 Light        = namedtuple('Light',        'pos color')
 Surface      = namedtuple('Surface',      'diffuse specular reflect roughness')
+Rect         = namedtuple('Rect',         'x y w h')
 
 
 class Thing(object):
@@ -172,7 +171,7 @@ SurfCheckerboard = Surface(
 
 class RayTracer(object):
     maxDepth = 5
-
+    
     def intersections(self, ray, scene):        
         closest, closestInter = INF, None
         for thing in scene.things:
@@ -188,14 +187,14 @@ class RayTracer(object):
 
     def traceRay(self, ray, scene, depth): # Color
         isect = self.intersections(ray, scene);
-        return isect and self.shade(isect, scene, depth) or Color.background
+        return isect and self.shade(isect, scene, depth) or scene.background
 
     def shade(self, isect, scene, depth):
         d = isect.ray.dir
         pos = d * isect.dist + isect.ray.start
         normal = isect.thing.normal(pos)
         reflectDir = d - (normal * (normal * d)) * 2
-        naturalColor = Color.background + self.getNaturalColor(isect.thing, pos, normal, reflectDir, scene)
+        naturalColor = scene.background + self.getNaturalColor(isect.thing, pos, normal, reflectDir, scene)
         reflectedColor = Color.grey if depth >= self.maxDepth else self.getReflectionColor(isect.thing, pos, normal, reflectDir, scene, depth)
         return naturalColor + reflectedColor
 
@@ -211,34 +210,39 @@ class RayTracer(object):
                 return col
             else:
                 illum = livec * norm;
-                lcolor = (illum * light.color) if illum > 0 else Color.defaultColor
+                lcolor = (illum * light.color) if illum > 0 else scene.defaultColor
                 specular = livec * rd.norm()
-                scolor = ((specular ** thing.surface.roughness) * light.color) if specular > 0 else Color.defaultColor
+                scolor = ((specular ** thing.surface.roughness) * light.color) if specular > 0 else scene.defaultColor
                 return col + thing.surface.diffuse(pos) * lcolor + thing.surface.specular(pos) * scolor
 
-        return reduce(addLight, scene.lights, Color.defaultColor)
+        return reduce(addLight, scene.lights, scene.defaultColor)
 
-    def render(self, scene, ctx, screenWidth, screenHeight, progressCallback=None, state=0, backupRate=100, backupCallback=None):
+    def render(self, scene, ctx, screenWidth, screenHeight,
+               frame=None,
+               progressCallback=None, state=0, backupRate=100, backupCallback=None):
+        kr = screenHeight / 4.0 / screenWidth
         def getPoint(x, y, camera):
             return (
                 camera.forward
-                + camera.right * ( (x - (screenWidth  / 2.0)) / 2.0 / screenWidth)
-                + camera.up    * (-(y - (screenHeight / 2.0)) / 2.0 / screenWidth)
+                + camera.right * ( x / 2.0 / screenWidth - 0.25)
+                + camera.up    * (-y / 2.0 / screenWidth + kr)
             ).norm()
 
-        y = 0
-        percStep = BASE_MONITORING_RATE / screenWidth or 1
+        if frame is None:
+            frame = Rect(0, 0, screenWidth, screenHeight)
+
+        percStep = BASE_MONITORING_RATE / frame.w or 1
         percStep = 1 if percStep < 1 else percStep
-        
-        for y in xrange(state, screenHeight):
+
+        for y in xrange(max(frame.y, state), frame.y + frame.h):
             if progressCallback and y % percStep == 0: progressCallback(y)
                 
             if backupCallback and y % backupRate == 0:
-                backupCallback(screenWidth, screenHeight, y)
+                backupCallback(screenWidth, screenHeight, frame, y)
                 
-            for x in xrange(screenWidth):
+            for x in xrange(frame.x, frame.x + frame.w):
                 color = self.traceRay(Ray(start=scene.camera.pos, dir=getPoint(x, y, scene.camera)), scene, 0)
-                ctx.putpixel((x, y), color.toDrawingColor())
+                ctx.putpixel((x - frame.x, y - frame.y), color.toDrawingColor())
                 #ctx.addPixel(color.toDrawingColor())
 
 class Scene(object):
@@ -246,6 +250,8 @@ class Scene(object):
         self.things = things
         self.lights = lights
         self.camera = camera
+        self.background = Color.black
+        self.defaultColor = Color.black
 
 
 defScene = Scene(
@@ -265,17 +271,17 @@ defScene = Scene(
 def stateFileName(fn):
     return u'{}.state'.format(fn)
 
-def go(fn, w, h):
+def go(fn, w, h, frame=None):
     import os
     import sys
     import pickle
     from progress_tool import Progress
     
-    def backup(w, h, y):
+    def backup(w, h, frame, y):
         print '# Save',
         img.save(fn)
-        if y < h - 1:
-            state = dict(w=w, h=h, y=y)
+        if y < frame.y + frame.h - 1:
+            state = dict(w=w, h=h, frame=frame, y=y)
             print 'Backup render state: {!r}'.format(state),
             with open(stateFileName(fn), 'wb') as f:
                 pickle.dump(state, f)
@@ -295,32 +301,41 @@ def go(fn, w, h):
         with open(stateFileName(fn), 'rb') as f:
             state = pickle.load(f)
             print '# Resume render to state: {!r}'.format(state)
-            return img, state['w'], state['h'], state['y']
+            return img, state['w'], state['h'], state['frame'], state['y']
 
     try:
-        img, w, h, y = resume()
+        img, w, h, frame, y = resume()
     except IOError:
-        img = Image.new('RGB', (w, h))
-        y = 0
+        if frame is None:
+            frame = Rect(0, 0, w, h)
+        img = Image.new('RGB', (frame.w, frame.h))
+        y = frame.y
 
-    p = Progress(y, h, statusLineStream=sys.stdout)
+    p = Progress(y, frame.y + frame.h, statusLineStream=sys.stdout)
     p.refreshStatusLine()
-
+    
     rayTracer = RayTracer()
     rayTracer.render(
         defScene, img, w, h, state=y,
-        #progressCallback=p.next, 
-        #backupRate=BASE_BACKUP_RATE / w or 1, backupCallback=backup,
+        frame=frame,
+        progressCallback=p.next, 
+        backupRate=BASE_BACKUP_RATE / frame.w or 1, backupCallback=backup,
     )
 
     p.next(h)
-    backup(w, h, h)
+    backup(w, h, frame, h)
+
+def prof():
+    import profile
+    profile.run('go("render_prof.png", 160, 120)')
 
 if __name__ == '__main__':
-    #w, h = 1920*3, 1080*3
-    w, h = 320, 240
-    fn = 'render_{0}x{1}.png'.format(w, h)
-    go(fn, w, h)
+    w, h = 1920*6, 1080*6
+    #w, h = 640, 480
+    #frame = (0, 0, w, h)
+    frame = Rect(w/4, h/4, w/2, h/2)
+    fn = 'render_{w}x{h}_[({frame.x},{frame.y})-{frame.w}x{frame.h}].png'.format(**locals())
+    go(fn, w, h, frame=frame)
 
     #for i in progressiveRange(64):
     #    print i
