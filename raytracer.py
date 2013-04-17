@@ -126,7 +126,6 @@ class Sphere(Thing):
         v = eo * ray.dir
         dist = 0
         if v >= 0:
-            #disc = self.radius2 - (Vector.dot(eo, eo) - v * v)
             disc = self.radius2 - (eo * eo - v ** 2)
             if disc >= 0:
                 dist = v - sqrt(disc)
