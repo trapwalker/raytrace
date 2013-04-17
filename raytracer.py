@@ -219,13 +219,11 @@ class RayTracer(object):
         return reduce(addLight, scene.lights, Color.defaultColor)
 
     def render(self, scene, ctx, screenWidth, screenHeight, progressCallback=None, state=0, backupRate=100, backupCallback=None):
-        def recenterX(x): return  (x - (screenWidth  / 2.0)) / 2.0 / screenWidth
-        def recenterY(y): return -(y - (screenHeight / 2.0)) / 2.0 / screenWidth
         def getPoint(x, y, camera):
             return (
                 camera.forward
-                + camera.right * recenterX(x)
-                + camera.up * recenterY(y)
+                + camera.right * ( (x - (screenWidth  / 2.0)) / 2.0 / screenWidth)
+                + camera.up    * (-(y - (screenHeight / 2.0)) / 2.0 / screenWidth)
             ).norm()
 
         y = 0
@@ -305,8 +303,6 @@ def go(fn, w, h):
         img = Image.new('RGB', (w, h))
         y = 0
 
-    backupRate = BASE_BACKUP_RATE / w or 1
-
     p = Progress(y, h, statusLineStream=sys.stdout)
     p.refreshStatusLine()
 
@@ -314,7 +310,7 @@ def go(fn, w, h):
     rayTracer.render(
         defScene, img, w, h, state=y,
         #progressCallback=p.next, 
-        #backupRate=backupRate, backupCallback=backup,
+        #backupRate=BASE_BACKUP_RATE / w or 1, backupCallback=backup,
     )
 
     p.next(h)
