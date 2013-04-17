@@ -328,13 +328,32 @@ def prof():
     import profile
     profile.run('go("render_prof.png", 160, 120)')
 
+
 if __name__ == '__main__':
-    w, h = 1920*6, 1080*6
-    #w, h = 640, 480
-    #frame = (0, 0, w, h)
-    frame = Rect(w/4, h/4, w/2, h/2)
+    import sys
+    maxw, maxh = 1920 * 3, 1080 * 3
+
+    if len(sys.argv) == 1:
+        w, h = 1920*6, 1080*6
+        #w, h = 640, 480
+        #frame = (0, 0, w, h)
+        frame = Rect(w/4, h/4, w/2, h/2)
+    else:
+        k = eval(sys.argv[5])
+        ww, hh = map(eval, sys.argv[1:3])
+        cx, cy = map(eval, sys.argv[3:5])
+        w = ww * k
+        h = hh * k
+        frame = Rect(
+            int(w * cx - ww / 2),
+            int(h * cx - hh / 2),
+            int(ww), int(hh))
+        
     fn = 'render_{w}x{h}_[({frame.x},{frame.y})-{frame.w}x{frame.h}].png'.format(**locals())
+    print '''Render to file {fn}
+        Size: {w}x{h}
+        Frame: ({frame.x},{frame.y}) {frame.w}x{frame.h}
+        Center: ({cx}, {cy})
+    '''.format(**locals())
     go(fn, w, h, frame=frame)
 
-    #for i in progressiveRange(64):
-    #    print i
