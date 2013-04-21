@@ -338,6 +338,11 @@ if __name__ == '__main__':
         #w, h = 640, 480
         #frame = (0, 0, w, h)
         frame = Rect(w/4, h/4, w/2, h/2)
+        cx, cy = w / 2, h / 2
+    elif len(sys.argv) == 1 + 2:
+        w, h = map(eval, sys.argv[1:3])
+        frame = Rect(0, 0, w, h)
+        cx, cy = w / 2, h / 2
     else:
         k = eval(sys.argv[5])
         ww, hh = map(eval, sys.argv[1:3])
