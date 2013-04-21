@@ -216,9 +216,7 @@ class RayTracer(object):
 
         return reduce(addLight, scene.lights, scene.defaultColor)
 
-    def render(self, scene, ctx, screenWidth, screenHeight,
-               frame=None,
-               progressCallback=None, state=0, backupRate=100, backupCallback=None):
+    def render(self, scene, ctx, screenWidth, screenHeight, frame=None, state=None, interruptRate=None):
         kr = screenHeight / 4.0 / screenWidth
         def getPoint(x, y, camera):
             return (
@@ -234,15 +232,13 @@ class RayTracer(object):
         percStep = 1 if percStep < 1 else percStep
 
         for y in xrange(max(frame.y, state), frame.y + frame.h):
-            if progressCallback and y % percStep == 0: progressCallback(y)
-                
-            if backupCallback and y % backupRate == 0:
-                backupCallback(screenWidth, screenHeight, frame, y)
-                
+            if interruptRate and y % interruptRate == 0:
+                yield y
+
             for x in xrange(frame.x, frame.x + frame.w):
                 color = self.traceRay(Ray(start=scene.camera.pos, dir=getPoint(x, y, scene.camera)), scene, 0)
                 ctx.putpixel((x - frame.x, y - frame.y), color.toDrawingColor())
-                #ctx.addPixel(color.toDrawingColor())
+
 
 class Scene(object):
     def __init__(self, things=[], lights=[], camera=None):
@@ -303,26 +299,26 @@ def go(fn, w, h, frame=None):
             return img, state['w'], state['h'], state['frame'], state['y']
 
     try:
-        img, w, h, frame, y = resume()
+        img, w, h, frame, state = resume()
     except IOError:
         if frame is None:
             frame = Rect(0, 0, w, h)
         img = Image.new('RGB', (frame.w, frame.h))
-        y = frame.y
+        state = frame.y
 
-    p = Progress(y, frame.y + frame.h, statusLineStream=sys.stdout)
-    p.refreshStatusLine()
+    p = Progress(state, frame.y + frame.h, statusLineStream=sys.stdout)
+
+    echoRate = BASE_MONITORING_RATE / frame.w or 1
     
     rayTracer = RayTracer()
-    rayTracer.render(
-        defScene, img, w, h, state=y,
-        frame=frame,
-        progressCallback=p.next, 
-        backupRate=BASE_BACKUP_RATE / frame.w or 1, backupCallback=backup,
-    )
+    for i, state in enumerate(rayTracer.render(defScene, img, w, h, frame=frame,
+                                               state=state, interruptRate=echoRate)):
+        p.next(state)
+        if i % 10 == 1:
+            backup(w, h, frame, state)
 
-    p.next(h)
-    backup(w, h, frame, h)
+    p.end()
+    backup(w, h, frame, state)
 
 def prof():
     import profile
@@ -334,10 +330,10 @@ if __name__ == '__main__':
     maxw, maxh = 1920 * 3, 1080 * 3
 
     if len(sys.argv) == 1:
-        w, h = 1920*6, 1080*6
-        #w, h = 640, 480
-        #frame = (0, 0, w, h)
-        frame = Rect(w/4, h/4, w/2, h/2)
+        #w, h = 1920*6, 1080*6
+        w, h = 320, 200
+        frame = Rect(0, 0, w, h)
+        #frame = Rect(w/4, h/4, w/2, h/2)
         cx, cy = w / 2, h / 2
     elif len(sys.argv) == 1 + 2:
         w, h = map(eval, sys.argv[1:3])

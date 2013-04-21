@@ -47,6 +47,15 @@ class Progress(object):
     def isFinished(self):
         return self.value >= self.b
 
+    def end(self):
+        self.value = self.b
+        self.isRun = False
+
+        if self.statusLineStream:
+            return self.refreshStatusLine()
+        else:
+            return self.fmt()
+
     def next(self, value=None):
         if not self.isRun:
             self.run()
@@ -110,3 +119,4 @@ def test():
 
 if __name__ == '__main__':
     test()
+
