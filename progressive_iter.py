@@ -18,6 +18,15 @@ def nestedIterN(n):
     return nestedIter(list(simplyfy(n)))
 
 
+def nestedIterAB(a, b=None):
+    if b is None:
+        return nestedIterN(a)
+    else:
+        if a > b:
+            a, b = b, a
+        return (i + a for i in nestedIterN(b - a))
+
+
 def nestedIter(l, k=1, s=0):
     if len(l) > 1:
         for i in range(0, l[0] * k, k):

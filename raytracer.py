@@ -3,6 +3,7 @@ from math import floor, sqrt
 from operator import itemgetter
 from collections import namedtuple
 from abc import abstractmethod
+from progressive_iter import nestedIterAB
 
 from PIL import Image
 
@@ -217,6 +218,10 @@ class RayTracer(object):
         return reduce(addLight, scene.lights, scene.defaultColor)
 
     def render(self, scene, ctx, screenWidth, screenHeight, frame=None, state=None, interruptRate=None):
+
+        iteratorY = xrange #nestedIterAB # xrange
+        iteratorX = xrange
+
         kr = screenHeight / 4.0 / screenWidth
         def getPoint(x, y, camera):
             return (
@@ -231,11 +236,11 @@ class RayTracer(object):
         percStep = BASE_MONITORING_RATE / frame.w or 1
         percStep = 1 if percStep < 1 else percStep
 
-        for y in xrange(max(frame.y, state), frame.y + frame.h):
+        for y in iteratorY(max(frame.y, state), frame.y + frame.h):
             if interruptRate and y % interruptRate == 0:
                 yield y
 
-            for x in xrange(frame.x, frame.x + frame.w):
+            for x in iteratorX(frame.x, frame.x + frame.w):
                 color = self.traceRay(Ray(start=scene.camera.pos, dir=getPoint(x, y, scene.camera)), scene, 0)
                 ctx.putpixel((x - frame.x, y - frame.y), color.toDrawingColor())
 
@@ -331,7 +336,7 @@ if __name__ == '__main__':
 
     if len(sys.argv) == 1:
         #w, h = 1920*6, 1080*6
-        w, h = 320, 200
+        w, h = 640, 480
         frame = Rect(0, 0, w, h)
         #frame = Rect(w/4, h/4, w/2, h/2)
         cx, cy = w / 2, h / 2
