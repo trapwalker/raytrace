@@ -28,15 +28,15 @@ def nestedIterAB(a, b=None):
 
 
 def nestedIter(l, k=1, s=0):
-    if len(l) > 1:
-        for i in range(0, l[0] * k, k):
-            for j in nestedIter(l[1:], k * l[0], s + i):
+    n, l = l[0], l[1:]
+    for i in range(0, n * k, k):
+        if l:
+            for j in nestedIter(l, k * n, s + i):
                 yield j
-    else:
-        for i in range(0, l[0] * k, k):
+        else:
             yield i + s
-        
+
 
 if __name__ == '__main__':
-    pass    
+    print list(nestedIterN(8))
 
