@@ -292,4 +292,5 @@ function exec(w, h) {
 function append() {
     exec(3840, 2160);
 }
-exec(320, 200);
+exec(1024, 768);
+
