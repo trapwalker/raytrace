@@ -1,93 +1,26 @@
 
 from math import floor, sqrt
-from operator import itemgetter
 from collections import namedtuple
 from abc import abstractmethod
-from progressive_iter import nestedIterAB
+from functools import reduce
+import sys
+import typing
 
 from PIL import Image
 
-INF = float('inf')
+from vector import Vector, INF
+from color import Color, WHITE, BLACK, GRAY
+
+
 BASE_MONITORING_RATE = 6400
 BASE_BACKUP_RATE = 64000
 
-def progressiveRange(n):
-    pass
-
-
-class Vector(tuple):
-    x = property(itemgetter(0))
-    y = property(itemgetter(1))
-    z = property(itemgetter(2))
-    
-    def __new__(cls, x, y, z):
-        return tuple.__new__(cls, (x, y, z))
-
-    def times(self, k): return Vector(self.x * k, self.y * k, self.z * k)
-    def minus(self, v): return Vector(self.x - v.x, self.y - v.y, self.z - v.z)
-    def plus(self, v):  return Vector(self.x + v.x, self.y + v.y, self.z + v.z)
-    def dot(self, v):   return self.x * v.x + self.y * v.y + self.z * v.z
-    def mag(self):      return sqrt(self.x ** 2 + self.y ** 2 + self.z ** 2)
-    def norm(self):
-        mag = self.mag()
-        return self.times(INF if mag == 0 else 1.0 / mag)
-
-    def cross(self, v):
-        return Vector(self.y * v.z - self.z * v.y,
-                      self.z * v.x - self.x * v.z,
-                      self.x * v.y - self.y * v.x);
-
-    def __mul__(self, arg):
-        return self.dot(arg) if isinstance(arg, Vector) else self.times(arg)
-
-    def __repr__(self):
-        return 'Vector({0.x}, {0.y}, {0.z})'.format(self)
-
-    __add__ = plus
-    __sub__ = minus
-    __abs__ = mag
-    __rmul__ = __mul__
-
-
-class Color(tuple):
-    r = property(itemgetter(0))
-    g = property(itemgetter(1))
-    b = property(itemgetter(2))
-
-    def __new__(cls, r, g, b):
-        return tuple.__new__(cls, (r, g, b))
-
-    def scale(self, k): return Color(self.r * k, self.g * k, self.b * k)
-    def plus(self, c):  return Color(self.r + c.r, self.g + c.g, self.b + c.b)
-    def times(self, c): return Color(self.r * c.r, self.g * c.g, self.b * c.b)
-
-    def toDrawingColor(self):
-        return Color(int(floor(min(self.r, 1) * 255)),
-                     int(floor(min(self.g, 1) * 255)),
-                     int(floor(min(self.b, 1) * 255)))
-
-    def __mul__(self, arg):
-        return self.times(arg) if isinstance(arg, Color) else self.scale(arg)
-
-    def __str__(self):
-        return 'RGB({0.r}, {0.g}, {0.b})'.format(self.toDrawingColor())
-    
-    def __repr__(self):
-        return 'Color({0.r}, {0.g}, {0.b})'.format(self)
-
-    __add__ = plus
-    __rmul__ = __mul__
-
-Color.white = Color(1.0, 1.0, 1.0)
-Color.grey  = Color(0.5, 0.5, 0.5)
-Color.black = Color(0.0, 0.0, 0.0)
-
 
 class Camera(object):
-    def __init__(self, pos, lookAt):
+    def __init__(self, pos, look_at):
         self.pos = pos
         down = Vector(0.0, -1.0, 0.0)
-        self.forward = (lookAt - pos).norm()
+        self.forward = (look_at - pos).norm()
         self.right = self.forward.cross(down).norm() * 1.5
         self.up    = self.forward.cross(self.right).norm() * 1.5
 
@@ -104,11 +37,11 @@ class Thing(object):
         self.surface = surface
 
     @abstractmethod
-    def intersect(self, ray): # Intersection
+    def intersect(self, ray) -> Intersection:
         pass
 
     @abstractmethod
-    def normal(self, pos): # Vector
+    def normal(self, pos) -> Vector:
         pass
 
 
@@ -119,10 +52,10 @@ class Sphere(Thing):
         self.radius = radius
         self.radius2 = radius ** 2
 
-    def normal(self, pos): # Vector
+    def normal(self, pos) -> Vector:
         return (pos - self.center).norm()
 
-    def intersect(self, ray): # Intersection
+    def intersect(self, ray) -> Intersection:
         eo = self.center - ray.start
         v = eo * ray.dir
         dist = 0
@@ -141,10 +74,10 @@ class Plane(Thing):
         self._normal = norm
         self.offset = offset
 
-    def normal(self, pos): # Vector
+    def normal(self, pos) -> Vector:
         return self._normal
 
-    def intersect(self, ray): # Intersection
+    def intersect(self, ray) -> typing.Optional[Intersection]:
         denom = self._normal * ray.dir
         if denom > 0:
             return
@@ -154,16 +87,16 @@ class Plane(Thing):
     
 
 SurfShiny = Surface(
-    lambda pos: Color.white,
-    lambda pos: Color.grey,
+    lambda pos: WHITE,
+    lambda pos: GRAY,
     lambda pos: 1.0,
     250
 )
 
 
 SurfCheckerboard = Surface(
-    lambda pos: Color.white if (floor(pos.z) + floor(pos.x)) % 2 else Color.black,
-    lambda pos: Color.white,
+    lambda pos: WHITE if (floor(pos.z) + floor(pos.x)) % 2 else BLACK,
+    lambda pos: WHITE,
     lambda pos: 0.1 if (floor(pos.z) + floor(pos.x)) % 2 else 0.7,
     150
 )
@@ -171,87 +104,92 @@ SurfCheckerboard = Surface(
 
 class RayTracer(object):
     maxDepth = 5
-    
-    def intersections(self, ray, scene):        
-        closest, closestInter = INF, None
+
+    @staticmethod
+    def intersections(ray, scene):
+        closest, closest_inter = INF, None
         for thing in scene.things:
-            inter = thing.intersect(ray);
+            inter = thing.intersect(ray)
             if inter is not None and inter.dist < closest:
-                closest, closestInter = inter.dist, inter
+                closest, closest_inter = inter.dist, inter
 
-        return closestInter
+        return closest_inter
 
-    def testRay(self, ray, scene):
-        isect = self.intersections(ray, scene);
-        return isect and isect.dist;
+    def test_ray(self, ray, scene):
+        isect = self.intersections(ray, scene)
+        return isect and isect.dist
 
-    def traceRay(self, ray, scene, depth): # Color
-        isect = self.intersections(ray, scene);
+    def trace_ray(self, ray, scene, depth) -> Color:
+        isect = self.intersections(ray, scene)
         return isect and self.shade(isect, scene, depth) or scene.background
 
     def shade(self, isect, scene, depth):
         d = isect.ray.dir
         pos = d * isect.dist + isect.ray.start
         normal = isect.thing.normal(pos)
-        reflectDir = d - (normal * (normal * d)) * 2
-        naturalColor = scene.background + self.getNaturalColor(isect.thing, pos, normal, reflectDir, scene)
-        reflectedColor = Color.grey if depth >= self.maxDepth else self.getReflectionColor(isect.thing, pos, normal, reflectDir, scene, depth)
-        return naturalColor + reflectedColor
+        reflect_dir = d - (normal * (normal * d)) * 2
+        natural_color = scene.background + self.get_natural_color(isect.thing, pos, normal, reflect_dir, scene)
+        reflected_color = (
+            GRAY
+            if depth >= self.maxDepth else
+            self.get_reflection_color(isect.thing, pos, normal, reflect_dir, scene, depth)
+        )
+        return natural_color + reflected_color
 
-    def getReflectionColor(self, thing, pos, normal, rd, scene, depth):
-        return thing.surface.reflect(pos) * self.traceRay(Ray(start=pos, dir=rd), scene, depth + 1)
+    def get_reflection_color(self, thing, pos, normal, rd, scene, depth):
+        return thing.surface.reflect(pos) * self.trace_ray(Ray(start=pos, dir=rd), scene, depth + 1)
 
-    def getNaturalColor(self, thing, pos, norm, rd, scene):
-        def addLight(col, light):
+    def get_natural_color(self, thing, pos, norm, rd, scene):
+        def add_light(col, light):
             ldis = light.pos - pos
             livec = ldis.norm()
-            neatIsect = self.testRay(Ray(start=pos, dir=livec), scene)
-            if neatIsect is not None and (neatIsect <= abs(ldis)):
+            neat_isect = self.test_ray(Ray(start=pos, dir=livec), scene)
+            if neat_isect is not None and (neat_isect <= abs(ldis)):
                 return col
             else:
-                illum = livec * norm;
+                illum = livec * norm
                 lcolor = (illum * light.color) if illum > 0 else scene.defaultColor
                 specular = livec * rd.norm()
                 scolor = ((specular ** thing.surface.roughness) * light.color) if specular > 0 else scene.defaultColor
                 return col + thing.surface.diffuse(pos) * lcolor + thing.surface.specular(pos) * scolor
 
-        return reduce(addLight, scene.lights, scene.defaultColor)
+        return reduce(add_light, scene.lights, scene.defaultColor)
 
-    def render(self, scene, ctx, screenWidth, screenHeight, frame=None, state=None, interruptRate=None):
+    def render(self, scene, ctx, screen_width, screen_height, frame=None, state=None, interrupt_rate=None):
 
-        iteratorY = xrange #nestedIterAB # xrange
-        iteratorX = xrange
+        iterator_y = range  # nestedIterAB # range
+        iterator_x = range
 
-        kr = screenHeight / 4.0 / screenWidth
-        def getPoint(x, y, camera):
+        kr = screen_height / 4.0 / screen_width
+        def get_point(x, y, camera):
             return (
                 camera.forward
-                + camera.right * ( x / 2.0 / screenWidth - 0.25)
-                + camera.up    * (-y / 2.0 / screenWidth + kr)
+                + camera.right * (x / 2.0 / screen_width - 0.25)
+                + camera.up    * (-y / 2.0 / screen_width + kr)
             ).norm()
 
         if frame is None:
-            frame = Rect(0, 0, screenWidth, screenHeight)
+            frame = Rect(0, 0, screen_width, screen_height)
 
         percStep = BASE_MONITORING_RATE / frame.w or 1
         percStep = 1 if percStep < 1 else percStep
 
-        for y in iteratorY(max(frame.y, state), frame.y + frame.h):
-            if interruptRate and y % interruptRate == 0:
+        for y in iterator_y(max(frame.y, state), frame.y + frame.h):
+            if interrupt_rate and y % interrupt_rate == 0:
                 yield y
 
-            for x in iteratorX(frame.x, frame.x + frame.w):
-                color = self.traceRay(Ray(start=scene.camera.pos, dir=getPoint(x, y, scene.camera)), scene, 0)
-                ctx.putpixel((x - frame.x, y - frame.y), color.toDrawingColor())
+            for x in iterator_x(frame.x, frame.x + frame.w):
+                color = self.trace_ray(Ray(start=scene.camera.pos, dir=get_point(x, y, scene.camera)), scene, 0)
+                ctx.putpixel((x - frame.x, y - frame.y), color.to_drawing_color())
 
 
 class Scene(object):
-    def __init__(self, things=[], lights=[], camera=None):
-        self.things = things
-        self.lights = lights
+    def __init__(self, things=None, lights=None, camera=None):
+        self.things = things or []
+        self.lights = lights or []
         self.camera = camera
-        self.background = Color.black
-        self.defaultColor = Color.black
+        self.background = BLACK
+        self.defaultColor = BLACK
 
 
 defScene = Scene(
@@ -268,8 +206,10 @@ defScene = Scene(
     camera=Camera(Vector( 3.0, 2.0,  4.0), Vector(-1.0, 0.5, 0.0))    
 )
 
-def stateFileName(fn):
+
+def state_filename(fn):
     return u'{}.state'.format(fn)
+
 
 def go(fn, w, h, frame=None):
     import os
@@ -278,29 +218,29 @@ def go(fn, w, h, frame=None):
     from progress_tool import Progress
     
     def backup(w, h, frame, y):
-        print '# Save',
+        print('# Save', end='')
         img.save(fn)
         if y < frame.y + frame.h - 1:
             state = dict(w=w, h=h, frame=frame, y=y)
-            print 'Backup render state: {!r}'.format(state),
-            with open(stateFileName(fn), 'wb') as f:
+            print(f'Backup render state: {state}', end='')
+            with open(state_filename(fn), 'wb') as f:
                 pickle.dump(state, f)
         else:
             try:
-                print 'Try to remove state file...',
-                os.remove(stateFileName(fn))
-                print 'ok.'
+                print('Try to remove state file...', end='')
+                os.remove(state_filename(fn))
+                print('ok.')
             except WindowsError:
-                print 'failed.'
+                print('failed.')
 
     def resume():
-        if os.path.isfile(fn) and os.path.isfile(stateFileName(fn)):
+        if os.path.isfile(fn) and os.path.isfile(state_filename(fn)):
             raise IOError('State file not found')
             
         img = Image.open(fn)
-        with open(stateFileName(fn), 'rb') as f:
+        with open(state_filename(fn), 'rb') as f:
             state = pickle.load(f)
-            print '# Resume render to state: {!r}'.format(state)
+            print(f'# Resume render to state: {state!r}')
             return img, state['w'], state['h'], state['frame'], state['y']
 
     try:
@@ -313,11 +253,11 @@ def go(fn, w, h, frame=None):
 
     p = Progress(state, frame.y + frame.h, statusLineStream=sys.stdout)
 
-    echoRate = BASE_MONITORING_RATE / frame.w or 1
+    echo_rate = BASE_MONITORING_RATE / frame.w or 1
     
-    rayTracer = RayTracer()
-    for i, state in enumerate(rayTracer.render(defScene, img, w, h, frame=frame,
-                                               state=state, interruptRate=echoRate)):
+    ray_tracer = RayTracer()
+    for i, state in enumerate(ray_tracer.render(defScene, img, w, h, frame=frame,
+                                               state=state, interrupt_rate=echo_rate)):
         p.next(state)
         if i % 10 == 1:
             backup(w, h, frame, state)
@@ -325,20 +265,20 @@ def go(fn, w, h, frame=None):
     p.end()
     backup(w, h, frame, state)
 
+
 def prof():
     import profile
     profile.run('go("render_prof.png", 160, 120)')
 
 
-if __name__ == '__main__':
-    import sys
+def main():
     maxw, maxh = 1920 * 3, 1080 * 3
 
     if len(sys.argv) == 1:
-        #w, h = 1920*6, 1080*6
-        w, h = 640, 480
+        # w, h = 1920*6, 1080*6
+        w, h = 1024, 768
         frame = Rect(0, 0, w, h)
-        #frame = Rect(w/4, h/4, w/2, h/2)
+        # frame = Rect(w/4, h/4, w/2, h/2)
         cx, cy = w / 2, h / 2
     elif len(sys.argv) == 1 + 2:
         w, h = map(eval, sys.argv[1:3])
@@ -354,12 +294,15 @@ if __name__ == '__main__':
             int(w * cx - ww / 2),
             int(h * cx - hh / 2),
             int(ww), int(hh))
-        
+
     fn = 'render_{w}x{h}_[({frame.x},{frame.y})-{frame.w}x{frame.h}].png'.format(**locals())
-    print '''Render to file {fn}
+    print(f'''Render to file {fn}
         Size: {w}x{h}
         Frame: ({frame.x},{frame.y}) {frame.w}x{frame.h}
         Center: ({cx}, {cy})
-    '''.format(**locals())
+    ''')
     go(fn, w, h, frame=frame)
 
+
+if __name__ == '__main__':
+    main()

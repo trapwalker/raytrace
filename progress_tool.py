@@ -1,14 +1,14 @@
-# -*- coding: UTF-8 -*-
 import sys
 import datetime
 
 SECOND = 1 / 24 / 60 / 60
 
-def measureTime(func, out=sys.stdout):
+
+def measure_time(func, out=sys.stdout):
     def cover(*argv, **kw):
         time_start = datetime.datetime.now()
         res = func(*argv, **kw)
-        print >> out, 'Ok %.50s' % (datetime.datetime.now() - time_start)
+        print(f'Ok {datetime.datetime.now() - time_start:.50}', file=out)
         return res
     
     return cover
@@ -105,18 +105,17 @@ class Progress(object):
 def test():
     import sys
     b = 100
-    a = 0 #b / 2
+    a = 0  #b / 2
     pb = Progress(a, b, statusLineStream=sys.stdout)
-    for i in xrange(a, b):
+    i = 0
+    for i in range(a, b):
         pb.next(i)
-        for j in xrange(1000000):
+        for j in range(1000000):
             pass
 
-    print pb.next(i)
-    
+    print(pb.next(i))
     globals().update(locals())
         
 
 if __name__ == '__main__':
     test()
-
